@@ -153,8 +153,9 @@ CROSS JOIN
     FROM products) t2
 ORDER BY user_id, name
 
--- 9. Давайте проведём небольшую аналитику нашего сервиса и посчитаем, сколько в среднем товаров заказывает каждый пользователь.
--- Для начала объедините таблицы user_actions и orders — это вы уже умеете делать. В качестве ключа используйте поле order_id.
+-- Давайте проведём небольшую аналитику нашего сервиса и посчитаем, сколько в среднем товаров заказывает каждый пользователь.
+
+-- 9. Для начала объедините таблицы user_actions и orders — это вы уже умеете делать. В качестве ключа используйте поле order_id.
 -- Выведите id пользователей и заказов, а также список товаров в заказе. Отсортируйте таблицу по id пользователя по возрастанию,
 -- затем по id заказа — тоже по возрастанию.
 
@@ -163,5 +164,185 @@ ORDER BY user_id, name
 
 -- Пояснение:
 -- Перед тем как объединять таблицы, подумайте, какой тип соединения можно использовать. Попробуйте разные способы и сравните результаты.
+
+SELECT user_id, order_id, product_ids
+FROM user_actions LEFT JOIN orders using(order_id)
+ORDER BY user_id, order_id
+limit 1000
+
+-- Немного уточним наш запрос, поскольку нас интересуют не все заказы из таблицы user_actions, а только те, которые не были отменены
+-- пользователями, причём уникальные.
+
+-- 10!! Снова объедините таблицы user_actions и orders, но теперь оставьте только уникальные неотменённые заказы (мы делали похожий запрос
+-- на прошлом уроке). Остальные условия задачи те же: вывести id пользователей и заказов, а также список товаров в заказе. Отсортируйте
+-- таблицу по id пользователя по возрастанию, затем по id заказа — тоже по возрастанию.
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+-- Поля в результирующей таблице: user_id, order_id, product_ids
+
+-- Пояснение:
+-- Обратите внимание, что отфильтровать значения вы можете двумя способами. Это можно сделать либо до объединения таблиц, либо после него.
+-- Рекомендуется делать фильтрацию до объединения, так как в таком случае вы заранее уменьшаете количество строк в одной из таблиц и тем
+-- самым ускоряете процесс объединения. Однако для этого потребуется написать вложенный запрос.
+
+SELECT user_id, order_id, product_ids
+FROM 
+    (SELECT distinct user_id, order_id
+    FROM user_actions
+    WHERE order_id not in (SELECT order_id
+                        FROM   user_actions
+                        WHERE  action = 'cancel_order') ) t1
+JOIN orders using(order_id)
+ORDER BY user_id, order_id
+limit 1000
+
+-- 11. Используя запрос из предыдущего задания, посчитайте, сколько в среднем товаров заказывает каждый пользователь. Выведите id пользователя
+-- и среднее количество товаров в заказе. Среднее значение округлите до двух знаков после запятой. Колонку посчитанными значениями назовите
+-- avg_order_size. Результат выполнения запроса отсортируйте по возрастанию id пользователя. 
+
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+
+-- Поля в результирующей таблице: user_id, avg_order_size
+
+SELECT user_id, ROUND(AVG(array_length(product_ids, 1)), 2) as avg_order_size
+FROM 
+    (SELECT distinct user_id, order_id
+    FROM user_actions
+    WHERE order_id not in (SELECT order_id
+                        FROM   user_actions
+                        WHERE  action = 'cancel_order') ) t1
+JOIN orders using(order_id)
+GROUP BY user_id
+ORDER BY user_id
+limit 1000
+
+-- 12. Что если бы мы захотели сделать более подробную аналитику и, например, посчитать среднюю стоимость заказа (средний чек) каждого клиента?
+-- Для этого нам бы уже потребовалась информация о стоимости каждого отдельного заказа.
+
+-- Для начала к таблице с заказами (orders) примените функцию unnest, как мы делали в прошлом уроке. Колонку с id товаров назовите product_id.
+-- Затем к образовавшейся расширенной таблице по ключу product_id добавьте информацию о ценах на товары (из таблицы products).
+-- Должна получиться таблица с заказами, товарами внутри каждого заказа и ценами на эти товары. Выведите колонки с id заказа,
+-- id товара и ценой товара. Результат отсортируйте сначала по возрастанию id заказа, затем по возрастанию id товара.
+
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+
+-- Поля в результирующей таблице: order_id, product_id, price
+
+SELECT order_id, t1.product_id, price
+FROM (SELECT unnest(product_ids) AS product_id, order_id FROM orders) t1
+LEFT JOIN products ON t1.product_id = products.product_id
+ORDER BY order_id, t1.product_id
+LIMIT 1000
+
+-- 13. Используя запрос из предыдущего задания, рассчитайте суммарную стоимость каждого заказа. Выведите колонки с id заказов и их стоимостью.
+-- Колонку со стоимостью заказа назовите order_price. Результат отсортируйте по возрастанию id заказа.
+
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+
+-- Поля в результирующей таблице: order_id, order_price
+
+SELECT order_id, SUM(price) AS order_price
+FROM
+(SELECT unnest(product_ids) AS product_id, order_id FROM orders) t1
+LEFT JOIN products ON t1.product_id = products.product_id
+GROUP BY order_id
+ORDER BY order_id
+LIMIT 1000
+
+
+-- 14. Объедините запрос из предыдущего задания с частью запроса, который вы составили в задаче 11, то есть объедините запрос со стоимостью
+-- заказов с запросом, в котором вы считали размер каждого заказа из таблицы user_actions.
+
+-- На основе объединённой таблицы для каждого пользователя рассчитайте следующие показатели (метрики):
+-- общее число заказов — колонку назовите orders_count
+-- среднее количество товаров в заказе — avg_order_size
+-- суммарную стоимость всех покупок — sum_order_value
+-- среднюю стоимость заказа — avg_order_value
+-- минимальную стоимость заказа — min_order_value
+-- максимальную стоимость заказа — max_order_value
+-- Полученный результат отсортируйте по возрастанию id пользователя.
+
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+
+-- Помните, что в расчётах мы по-прежнему учитываем только неотменённые заказы. При расчёте средних значений,
+-- округляйте их до двух знаков после запятой.
+
+-- Поля в результирующей таблице: 
+
+-- user_id, orders_count, avg_order_size, sum_order_value, avg_order_value, min_order_value, max_order_value
+
+-- Пояснение:
+-- Для решения задачи нужно просто объединить запросы, которые вы уже написали на прошлых шагах, и сделать
+-- группировку с агрегацией. Подумайте, какой ключ и тип соединения нужно использовать. Если ваш запрос кажется
+-- слишком громоздким и сложным для восприятия, воспользуйтесь оператором WITH и табличными выражениями.
+
+WITH subquery1 AS (
+    SELECT order_id, SUM(price) AS order_price
+    FROM
+    (SELECT unnest(product_ids) AS product_id, order_id FROM orders) t1
+    LEFT JOIN products ON t1.product_id = products.product_id
+    GROUP BY order_id
+    ORDER BY order_id
+),
+subquery2 AS (
+    SELECT user_id, order_id, array_length(product_ids, 1) AS order_count_products
+    FROM 
+        (SELECT distinct user_id, order_id
+        FROM user_actions
+        WHERE order_id not in (SELECT order_id
+                            FROM   user_actions
+                            WHERE  action = 'cancel_order') ) t1
+    JOIN orders using(order_id)
+    ORDER BY user_id
+)
+
+SELECT user_id, COUNT(order_id) AS orders_count, ROUND(AVG(order_count_products), 2) AS avg_order_size,
+SUM(order_price) AS sum_order_value, ROUND(AVG(order_price), 2) AS avg_order_value, MIN(order_price) AS min_order_value,
+MAX(order_price) AS max_order_value
+FROM  subquery1 JOIN subquery2 using(order_id)
+GROUP BY user_id
+ORDER BY user_id
+LIMIT 1000
+
+-- 15. По таблицам courier_actions , orders и products определите 10 самых популярных товаров, доставленных в сентябре 2022 года.
+-- Самыми популярными товарами будем считать те, которые встречались в заказах чаще всего. Если товар встречается в одном заказе
+-- несколько раз (было куплено несколько единиц товара), то при подсчёте учитываем только одну единицу товара. Выведите наименования
+-- товаров и сколько раз они встречались в заказах. Новую колонку с количеством покупок товара назовите times_purchased. 
+-- Поля в результирующей таблице: name, times_purchased
+
+-- Пояснение:
+-- Мы уже решали похожую задачу на прошлом уроке. Попробуйте модифицировать свой запрос таким образом, чтобы он выводил наименования товаров,
+-- а не id. Также не забудьте учесть, что теперь несколько вхождений товара в заказ считаем, как одно вхождение.
+
+WITH subquery1 AS (
+    SELECT product_id, count(product_id) AS times_purchased
+    FROM(
+        SELECT distinct order_id, unnest(product_ids) as product_id
+        FROM orders LEFT JOIN courier_actions using(order_id)
+        WHERE date_part('month', time) = 9 AND date_part('year', time) = 2022 AND action = 'deliver_order'
+    ) t1
+    GROUP BY product_id
+)
+
+SELECT name, times_purchased
+FROM subquery1 LEFT JOIN products using(product_id)
+ORDER BY times_purchased desc
+limit 10
+
+-- 2 Способ
+SELECT name, count(product_id) as times_purchased
+FROM   (SELECT DISTINCT order_id, unnest(product_ids) as product_id
+        FROM   orders) as t
+        LEFT JOIN products using (product_id)
+        RIGHT JOIN courier_actions using (order_id)
+WHERE  action = 'deliver_order'
+   and date_part('month', time) = 9
+   and date_part('year', time) = 2022
+GROUP BY name
+ORDER BY times_purchased desc
+limit 10
+
+
+
+
 
 
