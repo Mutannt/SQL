@@ -341,6 +341,153 @@ GROUP BY name
 ORDER BY times_purchased desc
 limit 10
 
+-- 16. Доля отменённых заказов. Возьмите запрос, составленный на одном из прошлых уроков, и подтяните в него из таблицы users данные
+-- о поле пользователей таким образом, чтобы все пользователи из таблицы users_actions остались в результате. Затем посчитайте среднее
+-- значение cancel_rate для каждого пола, округлив его до трёх знаков после запятой. Колонку с посчитанным средним значением назовите
+-- avg_cancel_rate.
+
+-- Помните про отсутствие информации о поле некоторых пользователей после join, так как не все пользователи из таблицы user_action
+-- есть в таблице users. Для этой группы тоже посчитайте cancel_rate и в результирующей таблице для пустого значения в колонке с
+-- полом укажите ‘unknown’ (без кавычек). Возможно, для этого придётся вспомнить, как работает COALESCE.
+
+-- Результат отсортируйте по колонке с полом пользователя по возрастанию.
+-- Поля в результирующей таблице: sex, avg_cancel_rate
+
+-- Пояснение:
+-- Метрику cancel_rate в разрезе пола можно посчитать разными способами, в этой задаче предлагаем следующий алгоритм:
+-- 1. Сначала посчитайте cancel_rate для каждого пользователя.
+-- 2. Затем приджойните к результату информацию о поле пользователей.
+-- 3. Потом рассчитайте avg_cancel_rate для каждого пола и округлите значения до трёх знаков после запятой.
+
+WITH subjuery1 AS (
+    SELECT user_id,
+           round(count(order_id) filter (WHERE action = 'cancel_order') / count(distinct order_id)::decimal, 2) as cancel_rate
+    FROM   user_actions
+    GROUP BY user_id
+    ORDER BY user_id
+)
+
+SELECT coalesce(sex, 'unknown') as sex, ROUND(AVG(cancel_rate), 3) AS avg_cancel_rate
+FROM subjuery1 LEFT JOIN users using(user_id)
+GROUP BY sex
+ORDER BY sex
+
+-- 17. По таблицам orders и courier_actions определите id десяти заказов, которые доставляли дольше всего.
+-- Поле в результирующей таблице: order_id
+
+-- Пояснение:
+-- Для расчёта времени, затраченного на доставку заказа, используйте информацию о времени доставки и времени создания заказа
+-- — с данными в формате времени можно тоже проводить арифметические операции (например, вычислять разницу между ними).
+-- Обратите внимание, что колонки с этими данными находятся в разных таблицах. Для определения самых долгих заказов используйте оператор LIMIT. 
+
+SELECT order_id
+FROM   orders RIGHT JOIN (SELECT order_id, time as deliver_time
+                          FROM   courier_actions
+                          WHERE  action = 'deliver_order') as t using (order_id)
+ORDER BY deliver_time - creation_time DESC
+LIMIT 10
+
+-- 18*. На днях менеджер снова обратился к вам с задачей: попросил сделать выгрузку из таблицы orders со всеми заказами и их содержимым.
+-- Из переписки вы так и не поняли, зачем ему все эти данные, но задачу сделали: нажали SELECT * и отправили ему excel-файл с заказами.
+-- На следующее утро выяснилось, что такие данные его не устраивают, так как он не понимает, что это за списки с наборами чисел.
+-- Действительно, этот момент вы не учли.
+
+-- Задача: Произведите замену списков с id товаров из таблицы orders на списки с наименованиями товаров. Наименования возьмите из
+-- таблицы products. Колонку с новыми списками наименований назовите product_names. 
+
+-- Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+-- Поля в результирующей таблице: order_id, product_names
+-- Пояснение:
+
+-- Для решения задачи вам нужно сделать unnest колонки product_ids, соединить промежуточный результат с таблицей products для получения
+-- наименований товаров, а затем сделать обратно группировку с агрегацией в список наименований. 
+-- Для того чтобы сделать агрегацию значений в колонке в список, необходимо воспользоваться функцией array_agg.
+-- array_agg — это продвинутая агрегирующая функция, которая собирает все значения в указанном столбце в единый список (ARRAY).
+-- По сути array_agg — это операция, обратная unnest, её синтаксис ничем не отличается от синтаксиса остальных агрегирующих функций:
+-- SELECT column_1, array_agg(column_2) AS new_array
+-- FROM table
+-- GROUP BY column_1
+-- Перед тем как решать задачу, попробуйте сначала выполнить простое упражнение: разверните списки с id товаров, поместите результат
+-- в подзапрос, а потом сразу же сверните всё обратно в списки с помощью array_agg. Алгоритм решения этой задачи примерно такой же.
+
+SELECT order_id, array_agg(name) AS product_names
+FROM 
+    (SELECT order_id, unnest(product_ids) as product_id FROM orders) t1
+    LEFT JOIN products using(product_id)
+GROUP BY order_id
+LIMIT 1000
+
+-- 19**. Выясните, кто заказывал и доставлял самые большие заказы. Самыми большими считайте заказы с наибольшим числом товаров.
+-- Выведите id заказа, id пользователя и id курьера. Также в отдельных колонках укажите возраст пользователя и возраст курьера.
+-- Возраст измерьте числом полных лет, как мы делали в прошлых уроках. Считайте его относительно последней даты в таблице
+-- user_actions — как для пользователей, так и для курьеров. Колонки с возрастом назовите user_age и courier_age.
+-- Результат отсортируйте по возрастанию id заказа.
+
+-- Поля в результирующей таблице: order_id, user_id, user_age, courier_id, courier_age
+
+WITH subquery1 AS (
+    SELECT DISTINCT orders.order_id, user_id, courier_id
+    FROM orders
+        LEFT JOIN user_actions using(order_id)
+        LEFT JOIN courier_actions using(order_id)
+    WHERE orders.order_id IN (
+        SELECT order_id
+        FROM orders
+        WHERE array_length(product_ids, 1) = (SELECT MAX(array_length(product_ids, 1))
+                                                FROM orders)
+    )
+)
+
+SELECT order_id,
+        user_id,
+        date_part('year', age((SELECT MAX(time)::DATE FROM   user_actions), users.birth_date)) AS user_age,
+        courier_id,
+        date_part('year', age((SELECT MAX(time)::DATE FROM   user_actions), couriers.birth_date)) AS courier_age
+FROM subquery1
+    LEFT JOIN users using(user_id)
+    LEFT JOIN couriers using(courier_id)
+ORDER BY order_id
+-- 2 Способ ==================================
+with order_id_large_size as (SELECT order_id
+                             FROM   orders
+                             WHERE  array_length(product_ids, 1) = (SELECT max(array_length(product_ids, 1))
+                                                                    FROM   orders))
+SELECT DISTINCT order_id,
+                user_id,
+                date_part('year', age((SELECT max(time) FROM   user_actions), users.birth_date)) as user_age,
+                courier_id,
+                date_part('year', age((SELECT max(time) FROM   user_actions), couriers.birth_date)) as courier_age
+FROM   (SELECT order_id,
+               user_id
+        FROM   user_actions
+        WHERE  order_id in (SELECT * FROM   order_id_large_size)) t1
+    LEFT JOIN (SELECT order_id,
+                      courier_id
+               FROM   courier_actions
+               WHERE  order_id in (SELECT * FROM   order_id_large_size)) t2 using(order_id)
+    LEFT JOIN users using(user_id)
+    LEFT JOIN couriers using(courier_id)
+ORDER BY order_id
+
+-- 20**. SELF JOIN. Выясните, какие пары товаров покупают вместе чаще всего.
+-- Пары товаров сформируйте на основе таблицы с заказами. Отменённые заказы не учитывайте. В качестве результата выведите две колонки
+-- — колонку с парами наименований товаров и колонку со значениями, показывающими, сколько раз конкретная пара встретилась в заказах
+-- пользователей. Колонки назовите соответственно pair и count_pair.
+
+-- Пары товаров должны быть представлены в виде списков из двух наименований. Пары товаров внутри списков должны быть отсортированы
+-- в порядке возрастания наименования. Результат отсортируйте сначала по убыванию частоты встречаемости пары товаров в заказах, затем
+-- по колонке pair — по возрастанию.
+
+-- Поля в результирующей таблице: pair, count_pair
+
+-- Пояснение:
+-- В этой задаче вам необходимо сделать SELF JOIN. Подумайте, какую таблицу нужно присоединить к самой себе и заранее обработайте данные.
+-- Для решения рекомендуем воспользоваться табличными выражениями. Также вам могут пригодиться функции для работы со списками. Ознакомьтесь
+-- с примерами из документации и подумайте, что можно использовать в своём решении.
+-- Задача творческая и может быть решена разными способами.
+
+
+
 
 
 
