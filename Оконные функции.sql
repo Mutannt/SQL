@@ -478,3 +478,37 @@ FROM
     LEFT JOIN products using(product_id)
 GROUP BY order_id
 ORDER BY sum) t2
+
+
+-- ===============================================================================================================================
+-- Таблица с полями employee_id, name, manager_id, department_id, salary
+-- 1. Выведите среднюю зарплату по каждому отделу
+SELECT department_id, avg(salary) as avg_salary
+FROM employees
+GROUP BY department_id
+-- 2. Напишите запрос, который возвращает имя менеджера с максимальной зарплатой в каждом отделе.
+SELECT name
+FROM
+    (SELECT employee_id, name, manager_id, department_id, salary, max(salary) OVER(partition BY department_id) as max_salary_dep
+    FROM employees
+    WHERE manager_id is null) t1
+WHERE salary = max_salary_dep
+-- 3. Выведите имена сотрудников, которые получают минимальную зарплату в своем отделе.
+SELECT name
+FROM
+    (SELECT employee_id, name, manager_id, department_id, salary, min(salary) OVER(partition BY department_id) as min_salary_dep
+    FROM employees) t1
+WHERE salary = min_salary_dep
+-- 4. Выведите имена сотрудников, которые получают зарплату выше средней по их отделу.
+SELECT name
+FROM
+    (SELECT employee_id, name, manager_id, department_id, salary, avg(salary) OVER(partition BY department_id) as avg_salary_dep
+    FROM employees) t1
+WHERE salary > avg_salary_dep
+-- 5. Выведите имена менеджеров, у которых более 1 сотрудника в подчинении.
+SELECT name
+FROM employees LEFT JOIN
+    (SELECT DISTINCT manager_id, count(salary) OVER(partition BY manager_id) as count
+    FROM employees
+    WHERE manager_id is not null) t1 ON employees.employee_id = t1.manager_id
+WHERE count > 1
